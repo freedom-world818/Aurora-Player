@@ -78,11 +78,13 @@ const FALLBACK_PUBLIC_APIS = [
 function getRuntimeConfig() {
     const injected = (typeof window !== 'undefined' && window.AURORA_API_CONFIG) || {};
 
-    let bases = injected.bases && injected.bases.length > 0
+    // 注意：用户显式注入 bases/tokens 时，即使是空数组 [] 也保留用户选择
+    //      只有未注入（undefined）才回退到默认值（区分「用户想禁用」与「用户没写」）
+    let bases = Array.isArray(injected.bases)
         ? injected.bases.slice()
         : DEFAULT_API_BASES.slice();
 
-    let tokens = injected.tokens && injected.tokens.length > 0
+    let tokens = Array.isArray(injected.tokens)
         ? injected.tokens.slice()
         : DEFAULT_METING_TOKENS.slice();
 
@@ -101,12 +103,35 @@ function getRuntimeConfig() {
     while (tokens.length < bases.length) tokens.push(tokens[tokens.length - 1] || 'token');
     while (authModeList.length < bases.length) authModeList.push(DEFAULT_AUTH_MODE);
 
-    // 如果同域名有 Pages Functions 代理，优先使用（放在自定义之后，公共之前）
-    // 注意：同域名 Functions 代理不需要客户端 HMAC 鉴权（服务端处理）
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    // 如果同域名有 Functions 代理（Vercel / Cloudflare Pages 等），优先使用
+    // 注意：
+    //   1) 仅当用户未显式写 bases 配置时才自动插入（用户显式写了 = [],[xxx] 都尊重）
+    //   2) 同域名 Functions 代理不需要客户端 HMAC 鉴权（服务端处理）
+    //   3) 纯静态托管域名（如 *.github.io）没有 /api 能力，跳过插入避免首次请求浪费
+    const userExplicitlySetBases = Array.isArray(injected.bases);
+    if (!userExplicitlySetBases
+        && typeof window !== 'undefined'
+        && window.location
+        && window.location.origin) {
+
         const origin = window.location.origin;
         const hasOriginProxy = bases.some(b => b.startsWith(origin));
-        if (!hasOriginProxy && !origin.startsWith('file:')) {
+
+        // 明确的纯静态托管域名后缀（无 Serverless Functions /api 能力），跳过插入
+        const PURE_STATIC_HOST_SUFFIXES = [
+            '.github.io',    // GitHub Pages（纯静态，无 Functions）
+            '.gitlab.io',    // GitLab Pages
+            '.gitee.io',     // Gitee Pages
+            '.coding.me',    // Coding Pages
+            '.coding.net',   // Coding Pages
+            '.surge.sh',     // Surge.sh（纯静态
+            '.firebaseapp.com', // Firebase Hosting（纯静态，Functions 另配路径）
+        ];
+        let host = '';
+        try { host = new URL(origin).hostname; } catch (e) { /* ignore */ }
+        const isPureStatic = PURE_STATIC_HOST_SUFFIXES.some(s => host.endsWith(s));
+
+        if (!hasOriginProxy && !origin.startsWith('file:') && !isPureStatic) {
             // 找到第一个公共实例的位置，在它之前插入
             const publicIdx = bases.findIndex(b =>
                 b.includes('workers.dev') && !b.includes('your-worker')
@@ -226,7 +251,7 @@ async function multiFetch(opts) {
                     params.set('auth', auth);
                 }
 
-                // Meting 统一接口（同域名 Pages Functions 代理 与 独立 Worker 路径一致）
+                // Meting 统一接口（同域名 Functions 代理 与 独立 Worker 路径一致）
                 url = `${src.base}/api?${params}`;
 
             } else {

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="0; url=/">
+    <title>Aurora Player — 路由跳转...</title>
+    <script>
+        // GitHub Pages SPA 路由回退（hack）
+        // 原理：GitHub Pages 不支持自定义 rewrites，任何不存在的路径都会落到本文件
+        // 我们把用户真实的路径存起来，然后跳转到根路径
+        (function () {
+            var currentPath = window.location.pathname + window.location.search + window.location.hash;
+            try {
+                sessionStorage.setItem('spa-redirect', currentPath);
+            } catch (e) { /* ignore */ }
+            // 如果 0 秒 meta refresh 没起作用（少数浏览器禁用），兜底 JS 跳转
+            setTimeout(function () {
+                window.location.replace('/');
+            }, 50);
+        })();
+    </script>
+</head>
+<body>
+    <p>正在返回首页...</p>
+</body>
+</html>

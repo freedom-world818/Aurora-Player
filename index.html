@@ -10,41 +10,43 @@
     <link rel="stylesheet" href="css/style.css">
 
     <!-- ════════════════════════════════════════════════════════
-         网易云音乐 API 配置（当前启用：方案 B Pages Functions 代理）
-         详细说明见 README-CLOUDFLARE.md
+         网易云音乐 API 配置（默认：通用自动探测模式）
+         ════════════════════════════════════════════════════════
+         【默认无需任何修改，一套代码适配所有平台】：
+           • Vercel（带 api/index.js）→ 自动用同域名 /api（Vercel Functions）
+           • GitHub Pages（纯静态）  → 自动用公共 Vercel 兜底实例
+           • Cloudflare Pages         → 自动用同域名 /api（Cloudflare Functions）
+           • 本地 file:// 打开         → 自动用公共兜底实例
+         如需强制指定或切换，请取消下面对应注释。
+         详细部署步骤见 README-FREE-DEPLOY.md（替代 Cloudflare 的免费方案）
          ════════════════════════════════════════════════════════ -->
 
-    <script>
-      // =================================================================
-      // 方案 B（当前启用）：Cloudflare Pages Functions 代理
-      // 原理：前端直接请求同域名下的 /api 路径，functions/api.js 自动处理
-      //       上游转发 + 鉴权 + 多源 fallback，客户端无跨域、零额外配置
-      // =================================================================
-      window.AURORA_API_CONFIG = {
-        bases: (typeof window !== 'undefined') ? [window.location.origin] : [],
-        tokens: [''],            // 同域名代理由服务端处理鉴权，客户端留空
-        authMode: 'none',        // 同域名 Functions 代理不需要客户端 HMAC
-      };
-    </script>
-
+    <!-- 如需强制配置，可取消以下任一 script 注释（一次只启用一个） -->
     <!--
     <script>
-      // 方式一（备用，如 Functions 代理失效可切换）：独立 Worker
-      // 部署教程：https://github.com/harewise/meting-api-serverless
+      // 模式 A：强制走同域名 /api Functions（Vercel / Cloudflare Pages 均适用）
       window.AURORA_API_CONFIG = {
-        bases: [
-          'https://your-worker-name.your-subdomain.workers.dev',  // 改成你自己的 Worker 地址
-        ],
-        tokens: ['your-secret-token'],   // 与 Worker 的 METING_TOKEN 一致
-        authMode: 'hmac',                // 使用 HMAC 鉴权
+        bases:    (typeof window !== 'undefined') ? [window.location.origin] : [],
+        tokens:   [''],
+        authMode: 'none',
       };
     </script>
 
     <script>
-      // 方式二（备用，仅用于快速测试）：仅公共 Vercel 实例
+      // 模式 B：独立部署的 Cloudflare Worker（需自行部署）
+      // 部署教程：https://github.com/harewise/meting-api-serverless
       window.AURORA_API_CONFIG = {
-        bases: [],
-        tokens: [],
+        bases:    ['https://your-worker-name.your-subdomain.workers.dev'],
+        tokens:   ['your-secret-token'],
+        authMode: 'hmac',
+      };
+    </script>
+
+    <script>
+      // 模式 C：仅公共兜底实例（纯静态零后端部署，如 GitHub Pages 等）
+      window.AURORA_API_CONFIG = {
+        bases:    [],
+        tokens:   [],
         authMode: 'none',
       };
     </script>
