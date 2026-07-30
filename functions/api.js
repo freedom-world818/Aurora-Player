@@ -51,9 +51,12 @@ function isOriginAllowed(origin, allowList) {
         const host = url.hostname;
         return allowed.some(pattern => {
             if (pattern === '*') return true;
+            // 通配符子域名匹配：例如 *.example.com → 匹配 sub.example.com / nested.sub.example.com
+            // 同时也允许匹配根域名 example.com（白名单场景常用）
             if (pattern.startsWith('*.')) {
-                const suffix = pattern.slice(1); // .example.com
-                return host.endsWith(suffix) || host === suffix.slice(1);
+                const baseDomain = pattern.slice(2); // 去掉 "*.", 得到 "example.com"
+                // 注意：必须匹配 ".example.com"（带点）结尾，否则会错误匹配 fake-example.com
+                return host.endsWith('.' + baseDomain) || host === baseDomain;
             }
             return host === pattern;
         });

@@ -226,11 +226,8 @@ async function multiFetch(opts) {
                     params.set('auth', auth);
                 }
 
-                // 区分：是同域名 Pages Functions 代理（path = /api）还是独立 Worker
-                const isOriginProxy = src.base === (typeof window !== 'undefined' ? window.location.origin : '');
-                url = isOriginProxy
-                    ? `${src.base}/api?${params}`
-                    : `${src.base}/api?${params}`;
+                // Meting 统一接口（同域名 Pages Functions 代理 与 独立 Worker 路径一致）
+                url = `${src.base}/api?${params}`;
 
             } else {
                 // —— NeteaseCloudMusicApi 原生接口 ——
