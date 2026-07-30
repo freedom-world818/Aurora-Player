@@ -7,7 +7,7 @@
 
 import { ParticleSystem } from './particleSystem.js';
 import { AudioEngine } from './audioEngine.js';
-import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable } from './ncmApi.js';
+import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable, getApiSourceInfo } from './ncmApi.js';
 
 const STORAGE_KEY = 'aurora_player';
 
@@ -1552,19 +1552,58 @@ class AuroraPlayer {
     }
 
     /**
-     * 渲染 API 服务未启动提示，带重试按钮
+     * 渲染 API 服务不可用提示，带重试按钮
      */
     _renderApiUnavailable() {
-        const isFileProtocol = window.location.protocol === 'file:';
-        const hint = isFileProtocol
-            ? '请双击项目目录下的 <br><code>start.bat</code> 一键启动播放器'
-            : 'API 服务正在启动中，稍后重试…';
+        const protocol = window.location.protocol;
+        const hostname = window.location.hostname || '';
+        const isLocal = (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '');
+        const isFileProtocol = protocol === 'file:';
+        const isCloudflarePages = !isLocal && !isFileProtocol &&
+            (hostname.includes('pages.dev') || hostname.includes('workers.dev'));
+
+        // 获取当前配置的 API 源信息
+        const apiInfo = getApiSourceInfo ? getApiSourceInfo() : null;
+        let sourceList = '';
+        if (apiInfo) {
+            const allSources = [apiInfo.primary, ...apiInfo.fallbacks];
+            sourceList = allSources.map((s, i) =>
+                `<div class="api-source-item ${i === 0 ? 'api-source-item--primary' : ''}">${i === 0 ? '●' : '○'} ${this._escapeHtml(s)}</div>`
+            ).join('');
+        }
+
+        let hint;
+        if (isFileProtocol) {
+            hint = `
+                <div>本地使用请双击项目目录下的 <br><code>start.bat</code> 一键启动播放器</div>`;
+        } else if (isCloudflarePages) {
+            hint = `
+                <div>已检测到部署在 Cloudflare Pages，请按以下方式配置：</div>
+                <ol style="text-align:left; margin:8px 0 8px 24px; padding:0; line-height:1.8;">
+                    <li><b>推荐</b>：部署 <code>functions/api.js</code> 代理（已在项目中），无需其他配置</li>
+                    <li>或部署 <a href="https://github.com/harewise/meting-api-serverless" target="_blank" rel="noopener">Meting-API-Serverless</a> Worker，并配置环境变量</li>
+                    <li>查看 <code>README-CLOUDFLARE.md</code> 了解完整步骤</li>
+                </ol>
+                ${sourceList ? `<div style="margin-top:8px; text-align:left; font-size:12px; opacity:0.7;">当前 API 源列表：<br>${sourceList}</div>` : ''}`;
+        } else if (isLocal) {
+            hint = `
+                <div>本地开发模式，等待 API 服务启动…</div>
+                <div>如果长时间未恢复，请运行 <code>node server.js</code> 或 <code>start.bat</code></div>`;
+        } else {
+            hint = `
+                <div>所有备用 API 源均连接失败</div>
+                <div style="margin-top:4px; font-size:12px; opacity:0.8;">
+                  可能原因：网络问题 / 公共 API 限流或失效
+                </div>
+                ${sourceList ? `<div style="margin-top:8px; text-align:left; font-size:12px; opacity:0.7;">当前尝试的 API 源：<br>${sourceList}</div>` : ''}`;
+        }
+
         this.elements['searchResults'].innerHTML = `
             <div class="search-error">
                 <div class="search-error__icon">⚠</div>
-                <div class="search-error__title">网易云 API 服务未启动</div>
+                <div class="search-error__title">网易云音乐 API 暂不可用</div>
                 <div class="search-error__hint">${hint}</div>
-                <button class="search-error__retry" id="btnRetryApi">重试连接</button>
+                <button class="search-error__retry" id="btnRetryApi">重新检测</button>
             </div>`;
         // 绑定重试按钮
         const retryBtn = this.elements['searchResults'].querySelector('#btnRetryApi');
