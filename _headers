@@ -1,0 +1,32 @@
+# =============================================================================
+#  Cloudflare Pages Headers
+#  防止 index.html 被 CDN 长期缓存导致部署后不更新；API 请求不缓存
+# =============================================================================
+
+# ----- 前端入口：HTML 不缓存，保证最新版本立即可用 -----
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# ----- 静态资源（JS/CSS/图片）：强缓存 30 天，通过文件名 hash 失效（如果以后有打包构建可保留） -----
+/js/*
+  Cache-Control: public, max-age=2592000, immutable
+
+/css/*
+  Cache-Control: public, max-age=2592000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=2592000, immutable
+
+# ----- API 接口：不缓存，防止搜索和播放地址被 CDN 缓存导致失效 -----
+/api*
+  Cache-Control: no-cache, no-store, must-revalidate
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS
+  Access-Control-Allow-Headers: *
+  X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

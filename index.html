@@ -8,6 +8,47 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+
+    <!-- ════════════════════════════════════════════════════════
+         网易云音乐 API 配置（当前启用：方案 B Pages Functions 代理）
+         详细说明见 README-CLOUDFLARE.md
+         ════════════════════════════════════════════════════════ -->
+
+    <script>
+      // =================================================================
+      // 方案 B（当前启用）：Cloudflare Pages Functions 代理
+      // 原理：前端直接请求同域名下的 /api 路径，functions/api.js 自动处理
+      //       上游转发 + 鉴权 + 多源 fallback，客户端无跨域、零额外配置
+      // =================================================================
+      window.AURORA_API_CONFIG = {
+        bases: (typeof window !== 'undefined') ? [window.location.origin] : [],
+        tokens: [''],            // 同域名代理由服务端处理鉴权，客户端留空
+        authMode: 'none',        // 同域名 Functions 代理不需要客户端 HMAC
+      };
+    </script>
+
+    <!--
+    <script>
+      // 方式一（备用，如 Functions 代理失效可切换）：独立 Worker
+      // 部署教程：https://github.com/harewise/meting-api-serverless
+      window.AURORA_API_CONFIG = {
+        bases: [
+          'https://your-worker-name.your-subdomain.workers.dev',  // 改成你自己的 Worker 地址
+        ],
+        tokens: ['your-secret-token'],   // 与 Worker 的 METING_TOKEN 一致
+        authMode: 'hmac',                // 使用 HMAC 鉴权
+      };
+    </script>
+
+    <script>
+      // 方式二（备用，仅用于快速测试）：仅公共 Vercel 实例
+      window.AURORA_API_CONFIG = {
+        bases: [],
+        tokens: [],
+        authMode: 'none',
+      };
+    </script>
+    -->
 </head>
 <body>
     <!-- Three.js 画布容器 -->
