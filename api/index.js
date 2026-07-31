@@ -285,14 +285,63 @@ async function handler(req, res) {
         if (!type) {
             sendJson(res, 400, {
                 code: -1,
-                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词), detail(歌曲详情)',
+                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词), detail(歌曲详情), image(封面图片代理)',
                 usage: {
                     search: '/api?server=netease&type=song&keywords=关键词',
                     url:    '/api?server=netease&type=url&id=歌曲ID',
                     lrc:    '/api?server=netease&type=lrc&id=歌曲ID',
                     detail: '/api?server=netease&type=detail&ids=歌曲ID1,ID2',
+                    image:  '/api?server=netease&type=image&url=encodeURIComponent(图片URL)',
                 },
             }, cors);
+            return;
+        }
+
+        // —— 图片代理（避开网易云防盗链 + CORS + Referer 限制）——
+        if (type === 'image') {
+            const rawImageUrl = (params.url || '').toString();
+            let imageUrl = '';
+            try { imageUrl = decodeURIComponent(rawImageUrl); } catch (_) { imageUrl = rawImageUrl; }
+            imageUrl = imageUrl.replace(/^http:/, 'https:').trim();
+
+            // SSRF 防护：仅允许网易云音乐 CDN 域名白名单
+            const CDN_WHITELIST = /^https?:\/\/([a-z0-9-]+\.)*music\.126\.net\//i;
+            if (!imageUrl || !CDN_WHITELIST.test(imageUrl)) {
+                sendJson(res, 403, { code: -1, message: 'image 参数必须是 *.music.126.net 域下的图片 URL' }, cors);
+                return;
+            }
+
+            const imgRes = await nativeRequest(imageUrl, {
+                timeoutMs: 10000,
+                headers: {
+                    // 模拟真实浏览器请求，不给 Referer（防盗链绕开关键）
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Aurora-Player/1.0',
+                    'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                    'Accept-Language': 'zh-CN,zh;q=0.9',
+                },
+            });
+
+            const skipImageHeaders = new Set([
+                'content-encoding', 'content-length', 'transfer-encoding',
+                'connection', 'content-security-policy',
+                'strict-transport-security', 'referrer-policy', 'alt-svc',
+            ]);
+            const outH = {};
+            for (const k of Object.keys(imgRes.headers)) {
+                if (skipImageHeaders.has(k.toLowerCase())) continue;
+                outH[k] = imgRes.headers[k];
+            }
+            Object.assign(outH, cors);
+            // 强缓存：图片内容不变，CDN 缓存 1 年
+            outH['Cache-Control'] = 'public, max-age=31536000, immutable';
+            outH['Timing-Allow-Origin'] = '*';
+
+            res.writeHead(imgRes.status || 500, outH);
+            if (req.method === 'HEAD') {
+                res.end();
+            } else {
+                res.end(imgRes.body || Buffer.alloc(0));
+            }
             return;
         }
 

@@ -245,12 +245,13 @@ export async function onRequest(context) {
         if (!type) {
             return new Response(JSON.stringify({
                 code: -1,
-                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词), detail(歌曲详情)',
+                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词), detail(歌曲详情), image(封面图片代理)',
                 usage: {
                     search: '/api?server=netease&type=song&keywords=关键词',
                     url:    '/api?server=netease&type=url&id=歌曲ID',
                     lrc:    '/api?server=netease&type=lrc&id=歌曲ID',
                     detail: '/api?server=netease&type=detail&ids=歌曲ID1,ID2',
+                    image:  '/api?server=netease&type=image&url=encodeURIComponent(图片URL)',
                 },
             }), {
                 status: 400,
@@ -261,9 +262,54 @@ export async function onRequest(context) {
             });
         }
 
+        const cors = makeCorsHeaders(requestOrigin, allowOrigins);
+
+        // —— 图片代理（避开网易云防盗链 + CORS + Referer 限制）——
+        if (type === 'image') {
+            const rawImageUrl = params.get('url') || '';
+            let imageUrl = '';
+            try { imageUrl = decodeURIComponent(rawImageUrl); } catch (_) { imageUrl = rawImageUrl; }
+            imageUrl = imageUrl.replace(/^http:/, 'https:').trim();
+
+            const CDN_WHITELIST = /^https?:\/\/([a-z0-9-]+\.)*music\.126\.net\//i;
+            if (!imageUrl || !CDN_WHITELIST.test(imageUrl)) {
+                return new Response(JSON.stringify({
+                    code: -1, message: 'image 参数必须是 *.music.126.net 域下的图片 URL',
+                }), {
+                    status: 403,
+                    headers: { 'Content-Type': 'application/json; charset=utf-8', ...cors },
+                });
+            }
+
+            const imgReq = new Request(imageUrl, {
+                method: request.method,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Aurora-Player/1.0',
+                    'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                },
+                cf: { cacheTtl: 31536000, cacheEverything: true },
+            });
+
+            let imgResp = await fetch(imgReq);
+            // 重写响应头：加 CORS + 强缓存
+            const outH = new Headers(imgResp.headers);
+            outH.delete('content-security-policy');
+            outH.delete('content-security-policy-report-only');
+            outH.delete('strict-transport-security');
+            outH.delete('referrer-policy');
+            Object.entries(cors).forEach(([k, v]) => outH.set(k, v));
+            outH.set('Cache-Control', 'public, max-age=31536000, immutable');
+            outH.set('Timing-Allow-Origin', '*');
+
+            return new Response(imgResp.body, {
+                status: imgResp.status,
+                statusText: imgResp.statusText,
+                headers: outH,
+            });
+        }
+
         const response = await buildUpstreamRequest(params, env);
         // 追加 CORS 头
-        const cors = makeCorsHeaders(requestOrigin, allowOrigins);
         Object.entries(cors).forEach(([k, v]) => response.headers.set(k, v));
         return response;
 

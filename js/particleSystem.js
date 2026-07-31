@@ -379,61 +379,72 @@ export class ParticleSystem {
 
     /**
      * 设置专辑封面 — 从图片提取像素颜色，映射为粒子目标位置
+     * 加 try/catch：如果 canvas 被 crossOrigin 污染（SecurityError），会回退到默认彩色粒子
      */
     setCoverImage(image) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const cols = this.coverCols;
-        const rows = this.coverRows;
-        canvas.width = cols;
-        canvas.height = rows;
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const cols = this.coverCols;
+            const rows = this.coverRows;
+            canvas.width = cols;
+            canvas.height = rows;
 
-        // 绘制图片到 canvas（裁剪为正方形）
-        const minDim = Math.min(image.width, image.height);
-        const sx = (image.width - minDim) / 2;
-        const sy = (image.height - minDim) / 2;
-        ctx.drawImage(image, sx, sy, minDim, minDim, 0, 0, cols, rows);
+            // 绘制图片到 canvas（裁剪为正方形）
+            const minDim = Math.min(image.width, image.height);
+            const sx = (image.width - minDim) / 2;
+            const sy = (image.height - minDim) / 2;
+            ctx.drawImage(image, sx, sy, minDim, minDim, 0, 0, cols, rows);
 
-        const imageData = ctx.getImageData(0, 0, cols, rows);
-        const pixels = imageData.data;
+            const imageData = ctx.getImageData(0, 0, cols, rows);
+            const pixels = imageData.data;
 
-        // 更新粒子目标位置和颜色
-        const targetPositions = this.geometry.attributes.aTargetPos.array;
-        const colors = this.geometry.attributes.aColor.array;
-        const half = this.coverSize / 2;
-        const totalPixels = cols * rows;
+            // 更新粒子目标位置和颜色
+            const targetPositions = this.geometry.attributes.aTargetPos.array;
+            const colors = this.geometry.attributes.aColor.array;
+            const half = this.coverSize / 2;
+            const totalPixels = cols * rows;
 
-        // 步进比例：粒子数 vs 像素总数，1:1精准映射
-        const stepRatio = totalPixels / this.particleCount;
+            // 步进比例：粒子数 vs 像素总数，1:1精准映射
+            const stepRatio = totalPixels / this.particleCount;
 
-        for (let i = 0; i < this.particleCount; i++) {
-            const i3 = i * 3;
+            for (let i = 0; i < this.particleCount; i++) {
+                const i3 = i * 3;
 
-            // 步进采样 — 每个粒子精准对应一个封面像素
-            const pixelIndex = Math.floor(i * stepRatio);
-            const px = pixelIndex % cols;
-            const py = Math.floor(pixelIndex / cols);
-            const idx = (py * cols + px) * 4;
+                // 步进采样 — 每个粒子精准对应一个封面像素
+                const pixelIndex = Math.floor(i * stepRatio);
+                const px = pixelIndex % cols;
+                const py = Math.floor(pixelIndex / cols);
+                const idx = (py * cols + px) * 4;
 
-            // 像素级精准定位：水平用cols、垂直用rows
-            const tx = ((px + 0.5) / cols) * this.coverSize - half;
-            const ty = -((py + 0.5) / rows) * this.coverSize + half;
-            const tz = 0.0;
+                // 像素级精准定位：水平用cols、垂直用rows
+                const tx = ((px + 0.5) / cols) * this.coverSize - half;
+                const ty = -((py + 0.5) / rows) * this.coverSize + half;
+                const tz = 0.0;
 
-            targetPositions[i3]     = tx;
-            targetPositions[i3 + 1] = ty;
-            targetPositions[i3 + 2] = tz;
+                targetPositions[i3]     = tx;
+                targetPositions[i3 + 1] = ty;
+                targetPositions[i3 + 2] = tz;
 
-            // 颜色 — 从封面像素直接采样
-            colors[i3]     = pixels[idx] / 255;
-            colors[i3 + 1] = pixels[idx + 1] / 255;
-            colors[i3 + 2] = pixels[idx + 2] / 255;
+                // 颜色 — 从封面像素直接采样
+                colors[i3]     = pixels[idx] / 255;
+                colors[i3 + 1] = pixels[idx + 1] / 255;
+                colors[i3 + 2] = pixels[idx + 2] / 255;
+            }
+
+            this.geometry.attributes.aTargetPos.needsUpdate = true;
+            this.geometry.attributes.aColor.needsUpdate = true;
+
+            this.coverColors = pixels;
+            this.targetTransition = 1; // 过渡到封面形状
+        } catch (err) {
+            // 典型原因：图片响应没有正确的 ACAO 头导致 canvas 被污染（getImageData 抛 SecurityError）
+            // 或者图片本身加载异常。安全回退：重置为默认彩色粒子，不 crash 整个播放器
+            console.warn('[particleSystem] 封面像素采样失败，回退默认粒子:', err && err.message ? err.message : err);
+            try { this.resetDefaultColors(); } catch (_) {}
+            this.coverColors = null;
+            this.targetTransition = 0;
         }
-
-        this.geometry.attributes.aTargetPos.needsUpdate = true;
-        this.geometry.attributes.aColor.needsUpdate = true;
-
-        this.coverColors = pixels;
     }
 
     /**
