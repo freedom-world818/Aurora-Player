@@ -441,12 +441,12 @@ export class ParticleSystem {
             this.targetTransition = 1; // 过渡到封面形状
             console.log('[粒子] 封面像素映射完成, targetTransition=1');
         } catch (err) {
-            // 典型原因：图片响应没有正确的 ACAO 头导致 canvas 被污染（getImageData 抛 SecurityError）
-            // 或者图片本身加载异常。安全回退：重置为默认彩色粒子，不 crash 整个播放器
-            console.warn('[particleSystem] 封面像素采样失败，回退默认粒子:', err && err.message ? err.message : err);
-            try { this.resetDefaultColors(); } catch (_) {}
-            this.coverColors = null;
-            this.targetTransition = 0;
+            console.warn('[particleSystem] 封面像素采样失败:', err && err.message ? err.message : err);
+            // 只有在没有成功封面时才重置（避免后续 tainted 调用覆盖已成功的封面）
+            if (!this.coverColors) {
+                try { this.resetDefaultColors(); } catch (_) {}
+                this.targetTransition = 0;
+            }
         }
     }
 

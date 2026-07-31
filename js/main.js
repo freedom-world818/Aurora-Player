@@ -934,6 +934,7 @@ class AuroraPlayer {
         // 如果有封面，也更新粒子方形
         if (track.coverArt) {
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.onload = () => this.particleSystem.setCoverImage(img);
             img.src = track.coverArt;
         }
