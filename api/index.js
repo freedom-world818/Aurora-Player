@@ -9,25 +9,31 @@
  *   支持 Meting-API-Serverless 和 NeteaseCloudMusicApi 两种后端
  *   自动处理 CORS、鉴权、多级上游 fallback
  *
- * 部署方式：
- *   将本文件放在项目根目录的 api/ 文件夹下，推送到 GitHub 后
- *   在 Vercel -> Add New -> Project -> Import Git Repository
- *   Vercel 会自动识别 api/ 目录为 Serverless Functions，无需额外配置
+ * 兼容性：
+ *   - 使用 Node 原生 https / http 模块（不依赖全局 fetch / AbortSignal）
+ *   - 兼容 Node 14+ 所有版本，确保 Vercel 无 runtime 字段时默认版本也能跑
  *
  * 环境变量配置（Vercel Dashboard -> Project Settings -> Environment Variables）：
  *   NCM_API_UPSTREAM    - 自定义上游地址（Meting Worker），默认空 → 走公共兜底
- *                          示例: https://your-worker.you.workers.dev
  *   NCM_AUTH_MODE       - 'hmac' (默认) 或 'none'
  *   NCM_METING_TOKEN    - Meting HMAC 密钥，默认 'token'
  *   NCM_ALLOW_ORIGINS   - 允许的来源域名，逗号分隔，默认 '*'
- *                          示例: your-domain.com,*.your-domain.com
  */
 
 const url = require('url');
 const crypto = require('crypto');
+const https = require('https');
+const http = require('http');
 
 // —— 公共兜底上游列表（按优先级）——
+//   2026-07 实测可用：
+//     api.7boe.top                       - 最快 ~600ms，Node API 原生格式（/search, /song/url, /lyric）
 const FALLBACK_UPSTREAMS = [
+    {
+        base: 'https://api.7boe.top',
+        adapter: 'ncmapi',
+        authMode: 'none',
+    },
     {
         base: 'https://netease-cloud-music-api-five-roan.vercel.app',
         adapter: 'ncmapi',
@@ -99,6 +105,55 @@ function sendJson(res, status, obj, extraHeaders = {}) {
 }
 
 /**
+ * 使用 Node 原生 http/https 发请求（替代全局 fetch，兼容所有 Node 版本）
+ * @param {string} targetUrl
+ * @param {{timeoutMs: number, headers: Object<string,string>}} opts
+ * @returns {Promise<{status:number, headers:Object, body:Buffer}>}
+ */
+function nativeRequest(targetUrl, { timeoutMs = 10000, headers = {} } = {}) {
+    return new Promise((resolve, reject) => {
+        const parsed = new URL(targetUrl);
+        const lib = parsed.protocol === 'https:' ? https : http;
+        const req = lib.request(
+            {
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+                path: parsed.pathname + parsed.search,
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Aurora-Player/1.0 (Vercel Serverless Function)',
+                    'Accept': 'application/json, text/plain, */*',
+                    ...headers,
+                },
+                timeout: timeoutMs,
+            },
+            (res) => {
+                const chunks = [];
+                res.on('data', (c) => chunks.push(c));
+                res.on('end', () => {
+                    const body = Buffer.concat(chunks);
+                    const responseHeaders = {};
+                    // Node 的 res.headers 是对象，keys 已小写
+                    for (const k of Object.keys(res.headers)) {
+                        responseHeaders[k] = res.headers[k];
+                    }
+                    resolve({
+                        status: res.statusCode || 500,
+                        headers: responseHeaders,
+                        body,
+                    });
+                });
+            }
+        );
+        req.on('timeout', () => {
+            req.destroy(new Error(`请求超时 (>${timeoutMs}ms)`));
+        });
+        req.on('error', reject);
+        req.end();
+    });
+}
+
+/**
  * 将 Meting 风格参数转换为对上游的请求并执行
  */
 async function fetchFromUpstream(params) {
@@ -163,35 +218,26 @@ async function fetchFromUpstream(params) {
                 }
             }
 
-            // fetch 在 Node 18+ 全局可用
-            const res = await fetch(targetUrl, {
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Aurora-Player/1.0 (Vercel Serverless Function)',
-                    'Accept': 'application/json, text/plain, */*',
-                },
-                signal: AbortSignal.timeout(8000),
-            });
+            const res = await nativeRequest(targetUrl, { timeoutMs: 10000 });
 
-            if (res.ok) {
-                const body = await res.arrayBuffer();
-                const headers = {};
-                // 过滤一些可能有问题的响应头
+            if (res.status >= 200 && res.status < 300) {
+                // 过滤可能有问题的响应头
                 const skip = new Set([
                     'content-encoding', 'content-length', 'transfer-encoding',
                     'connection', 'content-security-policy', 'content-security-policy-report-only',
-                    'strict-transport-security', // 交给 Vercel 处理
+                    'strict-transport-security',
                 ]);
-                for (const [k, v] of res.headers.entries()) {
+                const outHeaders = {};
+                for (const k of Object.keys(res.headers)) {
                     if (skip.has(k.toLowerCase())) continue;
-                    headers[k] = v;
+                    outHeaders[k] = res.headers[k];
                 }
-                headers['Access-Control-Allow-Origin'] = '*';
-                headers['Cache-Control'] = (type === 'url')
-                    ? 'public, max-age=600, s-maxage=600'   // 播放地址缓存 10 分钟
-                    : 'public, max-age=3600, s-maxage=3600'; // 其他 1 小时
+                outHeaders['Access-Control-Allow-Origin'] = '*';
+                outHeaders['Cache-Control'] = (type === 'url')
+                    ? 'public, max-age=600, s-maxage=600'
+                    : 'public, max-age=3600, s-maxage=3600';
 
-                return { status: res.status, headers, body: Buffer.from(body) };
+                return { status: res.status, headers: outHeaders, body: res.body };
             }
 
             lastErr = new Error(`上游 ${up.base} 返回 ${res.status}`);

@@ -56,13 +56,19 @@ const DEFAULT_METING_TOKENS = [
 // 'none'  -> 直接调用无鉴权的 API（如公共 Vercel NeteaseCloudMusicApi）
 const DEFAULT_AUTH_MODE = 'hmac';
 
-// 公共无鉴权备用源（Vercel 部署的 NeteaseCloudMusicApi）
+// 公共无鉴权备用源（NeteaseCloudMusicApi 原生格式）
 // 用于鉴权模式下所有源都失败时的兜底
+// 2026-07 实测可用：api.7boe.top（~600ms 搜索响应）
 const FALLBACK_PUBLIC_APIS = [
+    {
+        base: 'https://api.7boe.top',
+        authMode: 'none',
+        adapter: 'ncmapi'
+    },
     {
         base: 'https://netease-cloud-music-api-five-roan.vercel.app',
         authMode: 'none',
-        adapter: 'ncmapi' // 使用 NeteaseCloudMusicApi 原生格式
+        adapter: 'ncmapi'
     },
     {
         base: 'https://netease-cloud-music-api-demo.vercel.app',
@@ -276,7 +282,8 @@ async function multiFetch(opts) {
             }
 
             const ctrl = new AbortController();
-            const timer = setTimeout(() => ctrl.abort(), 8000);
+            // 超时 15s（Vercel Functions 冷启动约 3-8s + 公共源网络延迟 2-5s，留足余量）
+            const timer = setTimeout(() => ctrl.abort(), 15000);
             const res = await fetch(url, { ...fetchOpts, signal: ctrl.signal });
             clearTimeout(timer);
 

@@ -7,8 +7,12 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
+    { "source": "/api", "destination": "/api/index.js" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/((?!assets/|css/|js/|api/|favicon.ico).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!assets/|css/|js/|api\\b|api/|favicon\\.ico).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {

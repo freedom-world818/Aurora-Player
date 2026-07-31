@@ -23,6 +23,12 @@
 const FALLBACK_UPSTREAMS = [
     // 用户自定义（通过环境变量覆盖）
     // 以下为公共实例，不保证稳定
+    // 2026-07 实测可用：api.7boe.top（~600ms，/search /song/url /lyric）
+    {
+        base: 'https://api.7boe.top',
+        adapter: 'ncmapi',
+        authMode: 'none',
+    },
     {
         base: 'https://netease-cloud-music-api-five-roan.vercel.app',
         adapter: 'ncmapi',
