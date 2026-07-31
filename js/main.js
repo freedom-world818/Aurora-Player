@@ -7,7 +7,7 @@
 
 import { ParticleSystem } from './particleSystem.js';
 import { AudioEngine } from './audioEngine.js';
-import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable, getApiSourceInfo } from './ncmApi.js';
+import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable, getApiSourceInfo, getCoverUrl } from './ncmApi.js';
 
 const STORAGE_KEY = 'aurora_player';
 
