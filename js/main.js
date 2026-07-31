@@ -1483,9 +1483,10 @@ class AuroraPlayer {
             if (this.lyricsWheel) this.lyricsWheel.setCoverArt(coverArt);
             if (coverArt && this.particleSystem) {
                 const img = new Image();
-                img.crossOrigin = 'anonymous';
+                // 同源代理 URL 不需要 crossOrigin（同源不会污染 canvas）
+                // 之前设了 crossOrigin 反而导致浏览器检查 ACAO 头，Vercel 冷启动时可能失败
                 img.onload = () => this.particleSystem.setCoverImage(img);
-                img.onerror = () => { /* 粒子封面取不到就忽略（不影响播放和小图显示） */ };
+                img.onerror = () => console.warn('[粒子] 封面加载失败:', coverArt.slice(0, 100));
                 img.src = coverArt;
             }
             this._renderPlaylist();

@@ -48,8 +48,10 @@ export class AudioEngine {
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
         // 创建音频元素
+        // 不设 crossOrigin：网易云音频 CDN 不返回 CORS 头，设了会导致播放失败
+        // 代价：AnalyserNode 跨域时 getByteFrequencyData 返回全 0（无音频可视化）
+        // 但播放本身不受影响，粒子封面颜色仍正常
         this.audioElement = new Audio();
-        this.audioElement.crossOrigin = 'anonymous';
 
         // 创建音频节点
         this.source = this.audioContext.createMediaElementSource(this.audioElement);
