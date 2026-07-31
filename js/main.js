@@ -1424,6 +1424,26 @@ class AuroraPlayer {
         });
         container.innerHTML = html;
 
+        // 异步补全缺失的封面（逐首查询，互不影响）
+        songs.forEach((song, i) => {
+            if (!song.coverUrl) {
+                getSongDetail(song.id).then(details => {
+                    if (details && details[0]) {
+                        const d = details[0];
+                        const rawUrl = (d.al && d.al.picUrl) || (d.album && d.album.picUrl) || (d.al && d.al.pic_str) || '';
+                        if (rawUrl) {
+                            song.coverUrl = getCoverUrl(rawUrl);
+                            const img = container.querySelector(`[data-idx="${i}"] .search-result-cover`);
+                            if (img) {
+                                img.src = song.coverUrl;
+                                img.style.display = '';
+                            }
+                        }
+                    }
+                }).catch(() => {});
+            }
+        });
+
         // 事件委托
         container.querySelectorAll('.search-result-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
