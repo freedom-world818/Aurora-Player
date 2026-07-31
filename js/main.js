@@ -7,7 +7,7 @@
 
 import { ParticleSystem } from './particleSystem.js';
 import { AudioEngine } from './audioEngine.js';
-import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable, getApiSourceInfo, getCoverUrl } from './ncmApi.js';
+import { searchSongs, getSongUrl, getLyric, fetchCoverAsDataUrl, checkApiAvailable, getApiSourceInfo, getCoverUrl, getSongDetail } from './ncmApi.js';
 
 const STORAGE_KEY = 'aurora_player';
 
@@ -1455,7 +1455,25 @@ class AuroraPlayer {
 
             // 封面：优先用直链 URL（浏览器 <img> 直接加载最稳）
             // 如果后续要 setCoverImage（粒子需要）再 crossOrigin 加载，失败就算了
-            const coverArt = getCoverUrl(song.coverUrl) || null;
+            let coverArt = getCoverUrl(song.coverUrl) || null;
+            console.log('[播放] song.coverUrl:', song.coverUrl ? song.coverUrl.slice(0, 70) : 'NULL', '→ coverArt:', coverArt ? coverArt.slice(0, 70) : 'NULL');
+
+            // 兜底：如果搜索结果没有 coverUrl，实时查 song/detail 获取
+            if (!coverArt) {
+                try {
+                    const details = await getSongDetail(song.id);
+                    if (details && details[0]) {
+                        const d = details[0];
+                        const rawUrl = (d.al && d.al.picUrl) || (d.album && d.album.picUrl) || (d.al && d.al.pic_str) || '';
+                        if (rawUrl) {
+                            coverArt = getCoverUrl(rawUrl);
+                            console.log('[播放] 兜底 detail 查询成功, coverArt:', coverArt ? coverArt.slice(0, 70) : 'NULL');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[播放] 兜底 detail 查询失败:', e.message);
+                }
+            }
 
             // 构建 track 对象
             const trackEntry = {
