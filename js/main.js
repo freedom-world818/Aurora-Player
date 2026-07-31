@@ -1424,25 +1424,30 @@ class AuroraPlayer {
         });
         container.innerHTML = html;
 
-        // 异步补全缺失的封面（逐首查询，互不影响）
-        songs.forEach((song, i) => {
-            if (!song.coverUrl) {
-                getSongDetail(song.id).then(details => {
-                    if (details && details[0]) {
-                        const d = details[0];
-                        const rawUrl = (d.al && d.al.picUrl) || (d.album && d.album.picUrl) || (d.al && d.al.pic_str) || '';
-                        if (rawUrl) {
-                            song.coverUrl = getCoverUrl(rawUrl);
-                            const img = container.querySelector(`[data-idx="${i}"] .search-result-cover`);
-                            if (img) {
-                                img.src = song.coverUrl;
-                                img.style.display = '';
-                            }
+        // 异步批量补全缺失的封面（一次请求所有缺失 ID，而非逐首查询）
+        const missingIdx = [];
+        songs.forEach((song, i) => { if (!song.coverUrl) missingIdx.push(i); });
+        if (missingIdx.length > 0) {
+            const ids = missingIdx.map(i => String(songs[i].id)).join(',');
+            getSongDetail(ids).then(details => {
+                if (!details || !details.length) return;
+                const detailMap = new Map();
+                details.forEach(s => detailMap.set(String(s.id), s));
+                for (const idx of missingIdx) {
+                    const d = detailMap.get(String(songs[idx].id));
+                    if (!d) continue;
+                    const rawUrl = (d.al && d.al.picUrl) || (d.album && d.album.picUrl) || (d.al && d.al.pic_str) || '';
+                    if (rawUrl) {
+                        songs[idx].coverUrl = getCoverUrl(rawUrl);
+                        const img = container.querySelector(`[data-idx="${idx}"] .search-result-cover`);
+                        if (img) {
+                            img.src = songs[idx].coverUrl;
+                            img.style.display = '';
                         }
                     }
-                }).catch(() => {});
-            }
-        });
+                }
+            }).catch(() => {});
+        }
 
         // 事件委托
         container.querySelectorAll('.search-result-btn').forEach(btn => {

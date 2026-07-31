@@ -378,8 +378,8 @@ export async function searchSongs(keyword, limit = 20) {
         };
     });
 
-    // 第二轮（可选）：如果是 ncmapi 且存在 coverUrl 为空的条目，批量调 song/detail 补全
-    if (adapter === 'ncmapi') {
+    // 第二轮：批量调 song/detail 补全缺失的 coverUrl（不论 adapter，因为上游 API 都是 ncmapi 格式）
+    {
         const missingIdx = [];
         results.forEach((r, i) => { if (!r.coverUrl) missingIdx.push(i); });
         if (missingIdx.length > 0) {
