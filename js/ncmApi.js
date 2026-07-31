@@ -276,6 +276,11 @@ async function multiFetch(opts) {
                     case 'lrc':  // 歌词
                         url = `${src.base}/lyric?id=${encodeURIComponent(opts.id || '')}`;
                         break;
+                    case 'detail': // 歌曲详情（用于获取封面 picUrl）
+                        // ids 优先级 > id（支持批量查多首歌）
+                        const ids = opts.ids || opts.id || '';
+                        url = `${src.base}/song/detail?ids=${encodeURIComponent(ids)}`;
+                        break;
                     default:
                         continue; // 不支持的类型直接跳过
                 }
@@ -325,51 +330,92 @@ export async function searchSongs(keyword, limit = 20) {
     });
 
     const data = await response.json();
-    const list = toArray(data);
+    const list = toArray(data).slice(0, limit);
 
-    return list.slice(0, limit).map(song => {
+    // 第一轮：快速 map 提取基础信息 + 初步尝试取封面
+    const results = list.map(song => {
+        let artists = '';
+        let albumName = '';
+        let coverUrl = '';
+        let albumId = 0;
+        let duration = 0;
+
         // NeteaseCloudMusicApi 原生格式
         if (adapter === 'ncmapi') {
-            const artists = Array.isArray(song.ar)
+            artists = Array.isArray(song.ar)
                 ? song.ar.map(a => a.name).join(' / ')
                 : (song.artists || '');
-            const albumName = (song.al && song.al.name) || song.album || '';
-            const coverUrl = (song.al && song.al.picUrl)
-                ? song.al.picUrl.replace(/^http:/, 'https:') + '?param=200y200'
-                : '';
-            return {
-                id: song.id,
-                name: song.name,
-                artists: artists,
-                album: albumName,
-                albumId: (song.al && song.al.id) || 0,
-                duration: song.dt || song.duration || 0,
-                coverUrl: coverUrl,
-            };
+            albumName = (song.al && song.al.name) || (song.album && song.album.name) || (song.album || '');
+            coverUrl = _normalizeCoverUrl(_extractRawCoverUrl(song), '300y300');
+            albumId = (song.al && song.al.id) || (song.album && song.album.id) || 0;
+            duration = song.dt || song.duration || 0;
+        } else {
+            // Meting 格式
+            artists = song.artist
+                || (Array.isArray(song.artists) ? song.artists.map(a => a.name).join(' / ') : '')
+                || (Array.isArray(song.ar) ? song.ar.map(a => a.name).join(' / ') : '');
+            albumName = (typeof song.album === 'string') ? song.album
+                : ((song.album && song.album.name) || (song.al && song.al.name) || '');
+            coverUrl = song.pic_url
+                || (song.album && song.album.picUrl)
+                || (song.al && song.al.picUrl)
+                || '';
+            coverUrl = _normalizeCoverUrl(coverUrl, '300y300');
+            albumId = (song.album && song.album.id) || (song.al && song.al.id) || 0;
+            duration = song.duration || song.dt || 0;
         }
-
-        // Meting 格式
-        const artists = song.artist
-            || (Array.isArray(song.artists) ? song.artists.map(a => a.name).join(' / ') : '')
-            || (Array.isArray(song.ar) ? song.ar.map(a => a.name).join(' / ') : '');
-        const albumName = song.album
-            || (song.album && song.album.name)
-            || (song.al && song.al.name)
-            || '';
-        const coverUrl = song.pic_url
-            || (song.album && song.album.picUrl)
-            || (song.al && song.al.picUrl)
-            || '';
 
         return {
             id: song.id,
             name: song.name,
             artists: artists,
             album: albumName,
-            albumId: (song.album && song.album.id) || (song.al && song.al.id) || 0,
-            duration: song.duration || 0,
+            albumId: albumId,
+            duration: duration,
             coverUrl: coverUrl,
+            // 保留原 song 对象用于 debug（非标准）
+            _raw: song,
         };
+    });
+
+    // 第二轮（可选）：如果是 ncmapi 且存在 coverUrl 为空的条目，批量调 song/detail 补全
+    if (adapter === 'ncmapi') {
+        const missingIdx = [];
+        results.forEach((r, i) => { if (!r.coverUrl) missingIdx.push(i); });
+        if (missingIdx.length > 0) {
+            try {
+                const ids = missingIdx.map(i => String(results[i].id)).join(',');
+                const detailSongs = await getSongDetail(ids);
+                if (detailSongs.length > 0) {
+                    const detailMap = new Map();
+                    detailSongs.forEach(s => detailMap.set(String(s.id), s));
+                    for (const idx of missingIdx) {
+                        const orig = results[idx];
+                        const detail = detailMap.get(String(orig.id));
+                        if (!detail) continue;
+                        const rawCover = _extractRawCoverUrl(detail);
+                        if (rawCover) {
+                            orig.coverUrl = _normalizeCoverUrl(rawCover, '300y300');
+                            // 顺带补全其他缺失字段
+                            if (!orig.album && detail.al && detail.al.name) orig.album = detail.al.name;
+                        } else {
+                            // detail 里也没有，再尝试拿歌手头像当 fallback
+                            const ar = Array.isArray(detail.ar) ? detail.ar[0] : null;
+                            if (ar && ar.picUrl) orig.coverUrl = _normalizeCoverUrl(ar.picUrl, '300y300');
+                        }
+                    }
+                }
+            } catch (_) {
+                // 补全失败不影响主流程
+            }
+        }
+    }
+
+    // 去掉临时 _raw 字段再返回
+    return results.map(r => {
+        const { _raw, ...rest } = r;
+        void _raw;
+        return rest;
     });
 }
 
@@ -420,10 +466,60 @@ export async function getSongUrl(id) {
 }
 
 /**
- * 获取歌曲详情（占位兼容旧引用；返回 null）
+ * 从搜索/detail 返回的歌曲对象中提取封面 URL（多级 fallback）
+ * @param {object} song - 原格式歌曲对象
+ * @returns {string} 原始封面 URL（未 normalize）
  */
-export async function getSongDetail(id) {
-    return null;
+function _extractRawCoverUrl(song) {
+    if (!song || typeof song !== 'object') return '';
+    // 优先级：al.picUrl → al.pic_str 构造 → al.pic(+从 picUrl 推断) → album.picUrl → artists[0].picUrl
+    if (song.al && typeof song.al === 'object') {
+        if (song.al.picUrl) return song.al.picUrl;
+        if (song.al.pic_str) return `https://p1.music.126.net/placeholder/${song.al.pic_str}.jpg`;
+    }
+    if (song.album && typeof song.album === 'object' && song.album.picUrl) return song.album.picUrl;
+    if (Array.isArray(song.ar) && song.ar[0] && song.ar[0].picUrl) return song.ar[0].picUrl;
+    if (Array.isArray(song.artists) && song.artists[0] && song.artists[0].picUrl) return song.artists[0].picUrl;
+    if (song.picUrl) return song.picUrl;
+    return '';
+}
+
+/**
+ * 封面 URL 归一化：http→https，附加尺寸参数（网易云 CDN 原生支持 ?param=WxH）
+ * @param {string} rawUrl
+ * @param {string} size - 如 '200y200' '300y300'
+ */
+function _normalizeCoverUrl(rawUrl, size = '300y300') {
+    if (!rawUrl) return '';
+    let u = String(rawUrl).trim();
+    if (!u) return '';
+    u = u.replace(/^http:/, 'https:');
+    if (/music\.126\.net\//.test(u) && !/\?param=/.test(u) && !/\/$/.test(u)) {
+        u += `?param=${size}`;
+    }
+    return u;
+}
+
+/**
+ * 获取歌曲详情（用于补全封面 picUrl 等字段）
+ * @param {string|number|Array<string|number>} ids - 单首歌曲 ID 或多首歌曲 ID 数组
+ * @returns {Promise<Array<object>>} songs 数组（NeteaseCloudMusicApi 原生格式）
+ */
+export async function getSongDetail(ids) {
+    if (!ids) return [];
+    const idsStr = Array.isArray(ids) ? ids.filter(Boolean).map(String).join(',') : String(ids);
+    if (!idsStr) return [];
+    try {
+        const { response } = await multiFetch({
+            server: 'netease',
+            type: 'detail',
+            ids: idsStr,
+        });
+        const data = await response.json();
+        return Array.isArray(data && data.songs) ? data.songs : [];
+    } catch (_) {
+        return [];
+    }
 }
 
 /**
@@ -474,18 +570,35 @@ export async function getLyric(id) {
 export async function fetchCoverAsDataUrl(url) {
     if (!url) return null;
     const fixedUrl = url.replace(/^http:/, 'https:');
-    try {
-        const res = await fetch(fixedUrl);
-        if (!res.ok) return null;
-        const blob = await res.blob();
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-        });
-    } catch (_) {
-        return null;
+
+    // 尝试顺序：
+    // 1) 直连（music.126.net 对 <img> 标签允许，但 fetch 可能被 CORS 拦截）
+    // 2) allorigins 代理（加 CORS 头）
+    const attempts = [
+        { url: fixedUrl, mode: 'cors' },
+        // allorigins 代理：raw 模式返回原响应体，不会给图片加额外 header
+        {
+            url: `https://api.allorigins.win/raw?url=${encodeURIComponent(fixedUrl)}`,
+            mode: 'cors',
+        },
+    ];
+
+    for (const a of attempts) {
+        try {
+            const res = await fetch(a.url, { mode: a.mode || 'cors' });
+            if (!res.ok) continue;
+            const blob = await res.blob();
+            const dataUrl = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+            if (dataUrl && String(dataUrl).startsWith('data:')) return dataUrl;
+        } catch (_) {
+            // 继续下一种
+        }
     }
+    return null;
 }
 
 /**

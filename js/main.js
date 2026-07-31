@@ -1453,8 +1453,9 @@ class AuroraPlayer {
                 return;
             }
 
-            // 提取封面
-            const coverArt = await fetchCoverAsDataUrl(song.coverUrl);
+            // 封面：优先用直链 URL（浏览器 <img> 直接加载最稳）
+            // 如果后续要 setCoverImage（粒子需要）再 crossOrigin 加载，失败就算了
+            const coverArt = getCoverUrl(song.coverUrl) || null;
 
             // 构建 track 对象
             const trackEntry = {
@@ -1479,12 +1480,12 @@ class AuroraPlayer {
             await this.audioEngine.playIndex(index);
 
             // 更新 UI
+            if (this.lyricsWheel) this.lyricsWheel.setCoverArt(coverArt);
             if (coverArt && this.particleSystem) {
                 const img = new Image();
-                img.onload = () => {
-                    this.particleSystem.setCoverImage(img);
-                    if (this.lyricsWheel) this.lyricsWheel.setCoverArt(coverArt);
-                };
+                img.crossOrigin = 'anonymous';
+                img.onload = () => this.particleSystem.setCoverImage(img);
+                img.onerror = () => { /* 粒子封面取不到就忽略（不影响播放和小图显示） */ };
                 img.src = coverArt;
             }
             this._renderPlaylist();
@@ -1518,7 +1519,7 @@ class AuroraPlayer {
                 this._showToast('无法获取播放地址，可能是付费歌曲');
                 return;
             }
-            const coverArt = await fetchCoverAsDataUrl(song.coverUrl);
+            const coverArt = getCoverUrl(song.coverUrl) || null;
 
             const trackEntry = {
                 name: `${song.name} - ${song.artists}`,

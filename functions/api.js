@@ -168,6 +168,10 @@ async function buildUpstreamRequest(params, env) {
                     case 'lrc':
                         targetUrl = `${up.base}/lyric?id=${encodeURIComponent(id)}`;
                         break;
+                    case 'detail':
+                        const ids = (params.get('ids') || id || '').toString();
+                        targetUrl = `${up.base}/song/detail?ids=${encodeURIComponent(ids)}`;
+                        break;
                     default:
                         continue; // 不支持的类型跳过
                 }
@@ -241,11 +245,12 @@ export async function onRequest(context) {
         if (!type) {
             return new Response(JSON.stringify({
                 code: -1,
-                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词)',
+                message: '缺少 type 参数。支持: song(搜索), url(播放地址), lrc(歌词), detail(歌曲详情)',
                 usage: {
                     search: '/api?server=netease&type=song&keywords=关键词',
                     url:    '/api?server=netease&type=url&id=歌曲ID',
                     lrc:    '/api?server=netease&type=lrc&id=歌曲ID',
+                    detail: '/api?server=netease&type=detail&ids=歌曲ID1,ID2',
                 },
             }), {
                 status: 400,
