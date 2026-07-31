@@ -1483,9 +1483,13 @@ class AuroraPlayer {
             if (this.lyricsWheel) this.lyricsWheel.setCoverArt(coverArt);
             if (coverArt && this.particleSystem) {
                 const img = new Image();
-                // 同源代理 URL 不需要 crossOrigin（同源不会污染 canvas）
-                // 之前设了 crossOrigin 反而导致浏览器检查 ACAO 头，Vercel 冷启动时可能失败
-                img.onload = () => this.particleSystem.setCoverImage(img);
+                // 网易云 CDN (p*.music.126.net) 返回 ACAO=*，支持 CORS
+                // 设 crossOrigin 后 canvas 可读取像素（粒子封面颜色）
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    console.log('[粒子] 封面加载成功:', img.width + 'x' + img.height, coverArt.slice(0, 60));
+                    this.particleSystem.setCoverImage(img);
+                };
                 img.onerror = () => console.warn('[粒子] 封面加载失败:', coverArt.slice(0, 100));
                 img.src = coverArt;
             }

@@ -498,33 +498,23 @@ function _extractRawCoverUrl(song) {
 }
 
 /**
- * 将网易云 CDN URL 转成同源图片代理（避开浏览器 Referer 防盗链 + CORS 像素读取限制）
- * 只有在有 origin 的情况下才走代理；file:// 协议或无 origin 环境下原样返回
+ * 网易云 CDN URL 归一化
+ * 2026-07 实测：p*.music.126.net 返回 ACAO=* 且无 Referer 防盗链
+ * 因此不再需要同源代理，直连 URL + crossOrigin='anonymous' 即可读取像素
  * @param {string} httpsUrl - 已 normalize 成 https 的封面 URL
  */
 export function proxyCoverUrl(httpsUrl) {
     if (!httpsUrl) return '';
     let u = String(httpsUrl).trim();
     if (!u) return '';
-    // 已是代理 URL 或相对路径：跳过
+    // 已是相对路径或代理 URL：原样返回
     if (u.startsWith('/') || /\/api\?.*type=image\b/i.test(u)) return u;
-    // 非网易云域名（如占位图）：不代理，原样返回
-    if (!/^https?:\/\/([a-z0-9-]+\.)*music\.126\.net\//i.test(u)) return u;
-
-    const hasWindow = (typeof self !== 'undefined' && self.location && self.location.origin);
-    const origin = hasWindow ? self.location.origin : '';
-    if (!origin || origin.startsWith('file:')) {
-        // 本地 file:// 或未知环境，无法使用同源代理 → 直连（可能失败，但只能这样）
-        return u;
-    }
-    // 去掉网易云自己的 ?param=xxx 参数（交给同源代理原样转发，不做裁剪）
-    // —— 但保留它也行，代理会把 URL 透传的，所以这里直接 encode 就行
-    return `${origin}/api?server=netease&type=image&url=${encodeURIComponent(u)}`;
+    // 直接返回 HTTPS URL（CDN 支持 CORS，无需代理）
+    return u.replace(/^http:/, 'https:');
 }
 
 /**
  * 封面 URL 归一化：http→https，附加尺寸参数（网易云 CDN 原生支持 ?param=WxH）
- * 最后统一走 proxyCoverUrl 转成同源代理，解决防盗链 + CORS
  * @param {string} rawUrl
  * @param {string} size - 如 '200y200' '300y300'
  */

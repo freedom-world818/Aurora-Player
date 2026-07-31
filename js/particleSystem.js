@@ -383,6 +383,7 @@ export class ParticleSystem {
      */
     setCoverImage(image) {
         try {
+            console.log('[粒子] setCoverImage 开始, 图片尺寸:', image.width, 'x', image.height, 'crossOrigin:', image.crossOrigin);
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             const cols = this.coverCols;
@@ -398,6 +399,7 @@ export class ParticleSystem {
 
             const imageData = ctx.getImageData(0, 0, cols, rows);
             const pixels = imageData.data;
+            console.log('[粒子] getImageData 成功, 像素数:', pixels.length / 4, '首像素:', pixels[0], pixels[1], pixels[2]);
 
             // 更新粒子目标位置和颜色
             const targetPositions = this.geometry.attributes.aTargetPos.array;
@@ -437,6 +439,7 @@ export class ParticleSystem {
 
             this.coverColors = pixels;
             this.targetTransition = 1; // 过渡到封面形状
+            console.log('[粒子] 封面像素映射完成, targetTransition=1');
         } catch (err) {
             // 典型原因：图片响应没有正确的 ACAO 头导致 canvas 被污染（getImageData 抛 SecurityError）
             // 或者图片本身加载异常。安全回退：重置为默认彩色粒子，不 crash 整个播放器
@@ -456,11 +459,11 @@ export class ParticleSystem {
         const half = this.coverSize / 2;
 
         const palette = [
-            [1.0, 1.0, 1.0],
-            [0.75, 0.75, 0.75],
-            [0.5, 0.5, 0.5],
-            [0.3, 0.3, 0.3],
-            [0.15, 0.15, 0.15],
+            [0.2, 0.6, 1.0],   // 蓝
+            [0.4, 0.3, 0.9],   // 紫
+            [0.9, 0.3, 0.5],   // 粉
+            [0.3, 0.8, 0.6],   // 青
+            [0.95, 0.7, 0.3],  // 金
         ];
 
         for (let i = 0; i < this.particleCount; i++) {
