@@ -1503,7 +1503,8 @@ class AuroraPlayer {
             } catch (_) { /* 歌词获取失败不影响播放 */ }
         } catch (e) {
             console.error('[在线播放] 失败:', e);
-            this._showToast('加载失败，请重试');
+            const msg = (e && e.message) ? e.message.slice(0, 80) : '未知错误';
+            this._showToast(`播放失败: ${msg}`);
         }
     }
 

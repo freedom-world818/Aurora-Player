@@ -426,13 +426,26 @@ export async function searchSongs(keyword, limit = 20) {
  */
 export async function getSongUrl(id) {
     const idStr = String(id);
-    const { response, adapter } = await multiFetch({
-        server: 'netease',
-        type: 'url',
-        id: idStr,
-    });
 
-    const raw = await response.text();
+    let response, adapter;
+    try {
+        ({ response, adapter } = await multiFetch({
+            server: 'netease',
+            type: 'url',
+            id: idStr,
+        }));
+    } catch (e) {
+        console.warn('[getSongUrl] multiFetch 失败:', e.message);
+        return null;
+    }
+
+    let raw;
+    try {
+        raw = await response.text();
+    } catch (e) {
+        console.warn('[getSongUrl] response.text() 失败:', e.message);
+        return null;
+    }
     const trimmed = raw.trim();
 
     // Meting 可能返回纯文本 URL
